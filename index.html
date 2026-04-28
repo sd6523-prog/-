@@ -3,109 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>手工線排班系統</title>
+    <title>AI 採購單精密辨識系統 (玉美專用版 V3.2)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .sticky-col { position: sticky; left: 0; background: white; z-index: 10; }
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .loading-spinner { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.2s; background-color: #ffffff; }
+        .drop-zone.active { border-color: #3b82f6; background-color: #eff6ff; transform: scale(1.01); }
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        
-        /* 假別顏色定義 */
-        .bg-manual-off { background-color: #7c3aed !important; color: white; } /* 指定假: 紫色 */
-        .bg-auto-off { background-color: #3b82f6 !important; color: white; }   /* 系統假: 藍色 */
-        .bg-special-off { background-color: #f59e0b !important; color: white; } /* 特休: 橘色 */
-        .bg-sun-off { background-color: #fef2f2 !important; color: #ef4444; border: 1px solid #fee2e2; } /* 店休: 粉紅 */
-        
-        .text-work { color: #e2e8f0; } /* 上班字體顏色 (淡灰色) */
-        .target-met-row { background-color: #f0fdf4 !important; }
-        .warning-row { background-color: #fffaf0 !important; }
-        .bg-stats-row { background-color: #f8fafc; font-weight: 800; color: #475569; }
-        .cell-transition { transition: all 0.1s ease; }
     </style>
 </head>
-<body class="bg-slate-50 p-4 text-slate-800 text-sm">
-    <div id="app" class="max-w-[1600px] mx-auto space-y-4">
-        
-        <!-- 控制面板 -->
-        <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-4">
-                <div class="flex items-center gap-6">
-                    <div class="flex items-center gap-2">
-                        <span class="text-blue-500 font-bold">📅 設定期間：</span>
-                        <div class="flex bg-slate-100 rounded-lg p-1 font-bold shadow-inner text-base">
-                            <input type="number" id="yearInput" onchange="renderTable()" class="w-20 bg-transparent text-center outline-none" value="2026">
-                            <span class="text-slate-400 px-1">/</span>
-                            <input type="number" id="monthInput" onchange="renderTable()" min="1" max="12" class="w-12 bg-transparent text-center outline-none" value="5">
+<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
+    <div class="max-w-[1600px] mx-auto p-4 md:p-6">
+        <header class="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800">AI 採購單精密辨識系統</h1>
+                <p class="text-slate-500 text-sm mt-1">
+                    適用範圍：FG00 供食工場 / FG10 食材場 | 特殊規則：金針菇優良等級自動分類
+                </p>
+            </div>
+            <div class="flex gap-2">
+                <button id="exportBtn" class="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700 hidden shadow-sm transition">
+                    匯出 ERP 格式 (Excel)
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- 左側操作區 -->
+            <div class="lg:col-span-3 space-y-4">
+                <!-- 1. 對照表上傳 -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <h2 class="text-xs font-bold text-slate-700 mb-3 flex items-center uppercase tracking-wider">
+                        <span class="bg-blue-600 text-white w-5 h-5 rounded-full inline-flex items-center justify-center mr-2 text-[10px]">1</span>
+                        玉美對照表
+                    </h2>
+                    <input type="file" id="mappingFile" accept=".xlsx, .xls, .csv" class="hidden">
+                    <label for="mappingFile" class="block w-full text-center py-2 px-4 border border-slate-200 text-slate-600 rounded-lg cursor-pointer hover:bg-slate-50 transition text-xs font-medium">
+                        上傳玉美系列-測試用.xlsx
+                    </label>
+                    <div id="statusMapping" class="mt-2 text-[10px] text-slate-400 italic">尚未載入對照數據</div>
+                </div>
+
+                <!-- 2. 採購單上傳 -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <h2 class="text-xs font-bold text-slate-700 mb-3 flex items-center uppercase tracking-wider">
+                        <span class="bg-blue-600 text-white w-5 h-5 rounded-full inline-flex items-center justify-center mr-2 text-[10px]">2</span>
+                        上傳採購單 (PDF/圖片)
+                    </h2>
+                    <div id="dropZone" class="drop-zone rounded-xl p-8 text-center cursor-pointer border-2 border-dashed">
+                        <input type="file" id="orderFiles" accept="image/*, application/pdf" multiple class="hidden">
+                        <div class="pointer-events-none">
+                            <svg class="mx-auto h-8 w-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p class="text-[10px] text-slate-500 font-medium">拖放 PDF 或圖片至此</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2 border-l pl-6 border-slate-200">
-                        <span class="text-slate-500 font-medium">月休目標天數 (含週日):</span>
-                        <input type="number" id="targetOffInput" onchange="renderTable()" class="w-16 bg-blue-50 border border-blue-100 rounded-lg py-1 text-center font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-400" value="8">
+                    <div id="queueContainer" class="mt-3 hidden">
+                        <div id="fileList" class="space-y-1"></div>
                     </div>
-                </div>
-                <div class="flex gap-3">
-                    <button onclick="generateSchedule()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg transition-all active:scale-95">
-                        🎲 隨機自動排班 (至少3人上班)
-                    </button>
-                    <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold shadow-lg transition-all active:scale-95">
-                        📊 匯出 Excel
+                    <button id="processBtn" class="w-full mt-4 bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 transition text-sm shadow-md" disabled>
+                        開始辨識
                     </button>
                 </div>
             </div>
-        </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-4 gap-4">
-            <!-- 側邊欄：人員管理與匯入 -->
-            <div class="xl:col-span-1 space-y-4">
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <h2 class="font-bold text-slate-600 mb-3 flex items-center gap-2 border-b pb-2 text-base">👥 人員管理</h2>
-                    <div id="staffListContainer" class="space-y-1 mb-4 max-h-[300px] overflow-y-auto custom-scrollbar"></div>
-                    <div class="flex gap-2 pt-3 border-t border-slate-100">
-                        <input type="text" id="newStaffName" placeholder="輸入姓名" class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none text-xs focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all">
-                        <button onclick="addStaff()" class="bg-slate-800 text-white px-4 rounded-lg font-bold hover:bg-slate-700 transition-colors">+</button>
+            <!-- 右側預覽區 -->
+            <div class="lg:col-span-9">
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[600px]">
+                    <div id="emptyState" class="flex-grow flex flex-col items-center justify-center text-slate-400 p-10 text-center">
+                        <p class="text-sm italic mb-2">暫無辨識數據</p>
+                        <p class="text-[10px]">請上傳檔案並點擊開始辨識</p>
                     </div>
-                </div>
 
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <h2 class="font-bold mb-2 text-slate-600 text-base">📋 批次假位匯入</h2>
-                    <textarea id="importText" rows="8" placeholder="貼上文字，例如：陳惠芬 5/1 5/10 特休 5/20..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-[12px] outline-none mb-3 font-mono focus:bg-white transition-all resize-none"></textarea>
-                    <button onclick="handleImport()" class="w-full bg-indigo-600 text-white hover:bg-indigo-700 py-2.5 rounded-lg text-xs font-bold transition-colors shadow-md mb-2">執行辨識並匯入</button>
-                    <button onclick="clearAllSchedule()" class="w-full bg-slate-100 text-slate-500 hover:bg-slate-200 py-1.5 rounded-lg text-[11px] font-bold transition-colors border border-slate-200">清空所有排班資料</button>
-                </div>
-            </div>
-
-            <!-- 主表格區域 -->
-            <div class="xl:col-span-3 overflow-hidden flex flex-col">
-                <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-                    <div class="overflow-x-auto custom-scrollbar">
-                        <table id="scheduleTable" class="w-full text-xs border-collapse">
-                            <!-- JS 動態生成內容 -->
+                    <div id="tableWrapper" class="hidden overflow-auto flex-grow custom-scrollbar">
+                        <table class="w-full text-left text-[11px] border-collapse min-w-[1500px]">
+                            <thead class="sticky top-0 bg-white shadow-sm z-10">
+                                <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                                    <th class="p-3">客戶編號</th>
+                                    <th class="p-3">客戶名稱</th>
+                                    <th class="p-3">訂貨日期</th>
+                                    <th class="p-3">交貨日期</th>
+                                    <th class="p-3">訂單編號</th>
+                                    <th class="p-3">品項代號</th>
+                                    <th class="p-3 font-semibold text-blue-700">客戶品項名稱</th>
+                                    <th class="p-3">品項名稱</th>
+                                    <th class="p-3">規格單位代號</th>
+                                    <th class="p-3">規格單位</th>
+                                    <th class="p-3 text-right">數量</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultBody" class="divide-y divide-slate-100"></tbody>
                         </table>
-                    </div>
-                    
-                    <!-- 假別圖例 (放置於上班人數下方) -->
-                    <div id="legendContainer" class="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center gap-6">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">假別圖例:</span>
-                        <div class="flex items-center gap-1.5">
-                            <div class="w-4 h-4 rounded bg-manual-off"></div>
-                            <span class="text-xs">指定假/匯入假</span>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <div class="w-4 h-4 rounded bg-auto-off"></div>
-                            <span class="text-xs">系統隨機假</span>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <div class="w-4 h-4 rounded bg-special-off"></div>
-                            <span class="text-xs">特休</span>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <div class="w-4 h-4 rounded bg-sun-off border border-red-100"></div>
-                            <span class="text-xs text-red-500">週日店休 (計入總休)</span>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -113,342 +107,290 @@
     </div>
 
     <script>
-        // 初始人員名單
-        let staffList = [
-            { id: 1, name: '陳惠芬', lastMonthWork: 0 },
-            { id: 2, name: '許麗呅', lastMonthWork: 0 },
-            { id: 3, name: '陳昱蓉', lastMonthWork: 0 },
-            { id: 4, name: '戴文雅', lastMonthWork: 0 }
-        ];
-        
-        // 儲存排班資料：{ staffId: { day: 'work' | 'manual-off' | 'auto-off' | 'special' } }
-        let schedule = {}; 
+        const apiKey = ""; // 執行環境會自動提供
 
-        const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
-        const getWeekday = (y, m, d) => new Date(y, m - 1, d).getDay();
+        let masterMap = []; 
+        let allResults = [];
+        let pendingFiles = [];
 
-        // 渲染人員列表
-        function renderStaffList() {
-            const container = document.getElementById('staffListContainer');
-            container.innerHTML = staffList.map(s => `
-                <div class="flex items-center justify-between p-2.5 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 group">
-                    <span class="font-bold text-slate-700">${s.name}</span>
-                    <div class="flex items-center gap-3 text-[10px]">
-                        <span class="text-slate-400 font-medium">上月連勤:</span>
-                        <input type="number" value="${s.lastMonthWork}" 
-                            onchange="updateLastMonthWork(${s.id}, this.value)"
-                            class="w-10 bg-white border border-slate-200 rounded px-1 py-1 text-center font-bold outline-none focus:border-indigo-400" min="0" max="6">
-                        <button onclick="removeStaff(${s.id})" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity px-1">🗑️</button>
-                    </div>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        // 檔案處理
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('orderFiles');
+        dropZone.onclick = () => fileInput.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('active'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('active');
+        dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('active'); handleFiles(e.dataTransfer.files); };
+        fileInput.onchange = (e) => handleFiles(e.target.files);
+
+        function handleFiles(files) {
+            Array.from(files).forEach(f => {
+                pendingFiles.push({ id: Math.random(), file: f, status: 'ready' });
+            });
+            if (pendingFiles.length > 0) {
+                document.getElementById('queueContainer').classList.remove('hidden');
+                renderQueue();
+                document.getElementById('processBtn').disabled = false;
+            }
+        }
+
+        function renderQueue() {
+            document.getElementById('fileList').innerHTML = pendingFiles.map(i => `
+                <div class="text-[10px] p-2 bg-slate-50 border rounded flex justify-between items-center">
+                    <span class="truncate max-w-[120px]">${i.file.name}</span>
+                    <span class="font-bold ${i.status==='done'?'text-green-600':'text-blue-600'}">
+                        ${i.status==='ready'?'等待中':(i.status==='loading'?'處理中...':'✅')}
+                    </span>
                 </div>
             `).join('');
         }
 
-        function updateLastMonthWork(id, value) {
-            const staff = staffList.find(s => s.id === id);
-            if (staff) staff.lastMonthWork = parseInt(value) || 0;
-            renderTable();
-        }
+        // 對照表讀取
+        document.getElementById('mappingFile').onchange = (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const bstr = evt.target.result;
+                const wb = XLSX.read(bstr, { type: 'binary' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                masterMap = XLSX.utils.sheet_to_json(ws);
+                document.getElementById('statusMapping').innerHTML = `✅ 已載入 ${masterMap.length} 筆對應資料`;
+            };
+            reader.readAsBinaryString(file);
+        };
 
-        function addStaff() {
-            const name = document.getElementById('newStaffName').value.trim();
-            if (!name) return;
-            staffList.push({ id: Date.now(), name, lastMonthWork: 0 });
-            document.getElementById('newStaffName').value = '';
-            renderStaffList();
-            renderTable();
-        }
-
-        function removeStaff(id) {
-            if (staffList.length <= 1) return;
-            staffList = staffList.filter(s => s.id !== id);
-            renderTable();
-            renderStaffList();
-        }
-
-        function clearAllSchedule() {
-            schedule = {};
-            renderTable();
-        }
-
-        // 批次解析文字匯入假位
-        function handleImport() {
-            const text = document.getElementById('importText').value;
-            const year = parseInt(document.getElementById('yearInput').value);
-            const month = parseInt(document.getElementById('monthInput').value);
-            const total = daysInMonth(year, month);
+        // 辨識主程序
+        document.getElementById('processBtn').onclick = async () => {
+            const btn = document.getElementById('processBtn');
+            btn.disabled = true;
             
-            let positions = [];
-            staffList.forEach(s => {
-                let idx = text.indexOf(s.name);
-                while (idx !== -1) {
-                    positions.push({ id: s.id, name: s.name, index: idx });
-                    idx = text.indexOf(s.name, idx + 1);
-                }
-            });
-            positions.sort((a, b) => a.index - b.index);
-
-            for (let i = 0; i < positions.length; i++) {
-                const current = positions[i];
-                const segmentEnd = positions[i + 1] ? positions[i + 1].index : text.length;
-                const segment = text.substring(current.index, segmentEnd);
+            for(let item of pendingFiles) {
+                if(item.status === 'done' || item.status === 'loading') continue;
+                item.status = 'loading'; renderQueue();
                 
-                if (!schedule[current.id]) schedule[current.id] = {};
-                const cleanedSegment = segment.replace(/\b\d{4}\b/g, '');
-                const subSegments = cleanedSegment.split(/(特休)/);
-                let currentMode = 'manual-off';
-
-                subSegments.forEach(sub => {
-                    if (sub === '特休') {
-                        currentMode = 'special';
-                        return;
-                    }
-                    const dateMatches = sub.match(/\d+[\/\.]\d+|\d+/g);
-                    if (dateMatches) {
-                        dateMatches.forEach(match => {
-                            let d = 0;
-                            if (match.includes('/') || match.includes('.')) {
-                                const parts = match.split(/[\/\.]/);
-                                if (parseInt(parts[0]) === month) d = parseInt(parts[1]);
-                            } else {
-                                d = parseInt(match);
-                            }
-                            if (d >= 1 && d <= total) {
-                                schedule[current.id][d] = currentMode;
-                            }
-                        });
-                    }
-                });
-            }
-            document.getElementById('importText').value = '';
-            renderTable();
-        }
-
-        // 手動切換單格狀態
-        function toggleCell(staffId, day, weekday) {
-            if (weekday === 0) return; 
-            if (!schedule[staffId]) schedule[staffId] = {};
-            const current = schedule[staffId][day] || 'work';
-            let next = 'work';
-            
-            if (current === 'work') next = 'auto-off';
-            else if (current === 'auto-off') next = 'manual-off';
-            else if (current === 'manual-off') next = 'special';
-            else if (current === 'special') next = 'work';
-            
-            schedule[staffId][day] = next;
-            renderTable();
-        }
-
-        // 自動排假核心邏輯
-        function generateSchedule() {
-            const year = parseInt(document.getElementById('yearInput').value);
-            const month = parseInt(document.getElementById('monthInput').value);
-            const targetOff = parseInt(document.getElementById('targetOffInput').value) || 8;
-            const totalDays = daysInMonth(year, month);
-            
-            const newSchedule = {};
-            const stats = {};
-
-            // 1. 初始化背景 (週日、手動、特休優先保留)
-            staffList.forEach(s => {
-                newSchedule[s.id] = {};
-                stats[s.id] = { consecutiveWork: s.lastMonthWork, totalOffCount: 0 };
-                for (let d = 1; d <= totalDays; d++) {
-                    const wk = getWeekday(year, month, d);
-                    if (wk === 0) {
-                        newSchedule[s.id][d] = 'auto-off'; // 店休計入系統假
-                        stats[s.id].totalOffCount++;
-                    } else if (schedule[s.id]?.[d] === 'manual-off' || schedule[s.id]?.[d] === 'special') {
-                        const type = schedule[s.id][d];
-                        newSchedule[s.id][d] = type;
-                        if (type === 'manual-off') stats[s.id].totalOffCount++;
-                    }
-                }
-            });
-
-            const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
-
-            // 2. 逐日分配隨機假
-            for (let d = 1; d <= totalDays; d++) {
-                const wk = getWeekday(year, month, d);
-                if (wk === 0) {
-                    staffList.forEach(s => { stats[s.id].consecutiveWork = 0; });
-                    continue;
-                }
-
-                const candidates = shuffle(staffList);
-                candidates.forEach(s => {
-                    if (newSchedule[s.id][d]) {
-                        stats[s.id].consecutiveWork = 0;
-                        return;
-                    }
-
-                    // 檢查「至少3人上班」規則
-                    const currentOffToday = staffList.filter(p => newSchedule[p.id][d] && newSchedule[p.id][d] !== 'work').length;
-                    const remainingIfOff = staffList.length - currentOffToday - 1;
-
-                    const mustRest = stats[s.id].consecutiveWork >= 5; 
-                    const canRest = stats[s.id].totalOffCount < targetOff;
-                    const isMinStaffMet = remainingIfOff >= 3;
-
-                    // 特定夥伴避假 (陳惠芬與許麗呅儘量不一起休)
-                    let partnerConflict = false;
-                    if (s.name === '陳惠芬' || s.name === '許麗呅') {
-                        const pName = (s.name === '陳惠芬' ? '許麗呅' : '陳惠芬');
-                        const partner = staffList.find(p => p.name === pName);
-                        if (partner && newSchedule[partner.id]?.[d] && newSchedule[partner.id][d] !== 'work') partnerConflict = true;
-                    }
-
-                    // 決定放假邏輯
-                    if ((mustRest || (canRest && Math.random() > 0.4)) && (isMinStaffMet || mustRest) && !partnerConflict) {
-                        newSchedule[s.id][d] = 'auto-off';
-                        stats[s.id].totalOffCount++;
-                        stats[s.id].consecutiveWork = 0;
+                try {
+                    let images = [];
+                    if (item.file.type === "application/pdf") {
+                        images = await convertPdfToImages(item.file);
                     } else {
-                        newSchedule[s.id][d] = 'work';
-                        stats[s.id].consecutiveWork++;
+                        images = [await fileToBase64(item.file)];
                     }
+
+                    for (let b64 of images) {
+                        const aiData = await callGemini(b64);
+                        if (aiData) {
+                            const processedRows = processAILogic(aiData);
+                            allResults.push(...processedRows);
+                        }
+                    }
+                    item.status = 'done';
+                } catch(e) {
+                    item.status = 'error';
+                    console.error(e);
+                }
+                renderQueue();
+                renderTable();
+            }
+            document.getElementById('exportBtn').classList.remove('hidden');
+            btn.disabled = false;
+        };
+
+        async function convertPdfToImages(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const images = [];
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            images.push(canvas.toDataURL('image/png').split(',')[1]);
+            return images;
+        }
+
+        async function fileToBase64(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function callGemini(base64, retry = 0) {
+            const prompt = `你是一個專業採購單 OCR 專家。請精確辨識影像中的文字並輸出為 JSON 格式：
+            {
+              "order_no": "訂單編號",
+              "print_date": "訂貨日期",
+              "delivery_date": "交貨日期",
+              "purchase_unit": "找尋採購單位字樣，例如 FG00供食工場 或 FG10食材場",
+              "items": [
+                {"name": "客戶品項名稱", "qty": 數量, "unit": "單位"}
+              ]
+            }`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64 } }] }],
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
                 });
-            }
-
-            // 3. 補天數修正：確保每人天數精確符合目標
-            staffList.forEach(s => {
-                // 如果放太多，隨機拔掉 (不能拔週日)
-                while (stats[s.id].totalOffCount > targetOff) {
-                    const removable = Object.keys(newSchedule[s.id]).filter(d => 
-                        newSchedule[s.id][d] === 'auto-off' && getWeekday(year, month, parseInt(d)) !== 0
-                    );
-                    if (removable.length === 0) break;
-                    const d = removable[Math.floor(Math.random() * removable.length)];
-                    newSchedule[s.id][d] = 'work';
-                    stats[s.id].totalOffCount--;
+                if (res.status === 429 && retry < 3) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    return callGemini(base64, retry + 1);
                 }
-
-                // 如果放太少，補足假位 (必須符合 3 人上班限制)
-                let safety = 0;
-                while (stats[s.id].totalOffCount < targetOff && safety < 500) {
-                    safety++;
-                    const d = Math.floor(Math.random() * totalDays) + 1;
-                    const wk = getWeekday(year, month, d);
-                    if (wk === 0 || newSchedule[s.id][d] !== 'work') continue;
-
-                    const offToday = staffList.filter(p => newSchedule[p.id][d] !== 'work').length;
-                    if (staffList.length - offToday - 1 < 3) continue;
-
-                    newSchedule[s.id][d] = 'auto-off';
-                    stats[s.id].totalOffCount++;
-                }
-            });
-
-            schedule = newSchedule;
-            renderTable();
+                const data = await res.json();
+                return JSON.parse(data.candidates[0].content.parts[0].text);
+            } catch(e) { return null; }
         }
 
-        // 繪製排班表格
+        function normalize(s) {
+            if (!s) return "";
+            return String(s)
+                .replace(/[\s\(\)\[\]\（\）\【\】\-\_\:\：\/]/g, '')
+                .toLowerCase();
+        }
+
+        function toAD(s) {
+            if(!s) return "";
+            const m = String(s).match(/(\d+)[-/](\d+)[-/](\d+)/);
+            if(!m) return s;
+            let year = parseInt(m[1]);
+            if(year < 1900) year += 1911; 
+            return `${year}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+        }
+
+        function processAILogic(ai) {
+            const unitText = ai.purchase_unit || "";
+            let cid = "";
+            let cname = "";
+
+            // #採購單位邏輯
+            if (unitText.includes("FG10")) {
+                cid = "C310043";
+                cname = "玉美生技股份有限公司(食材)";
+            } else if (unitText.includes("FG00")) {
+                cid = "C310042";
+                cname = "玉美生技股份有限公司(供食工場)";
+            } else {
+                // 模糊判斷
+                cid = unitText.includes("食材") ? "C310043" : "C310042";
+                cname = unitText.includes("食材") ? "玉美生技股份有限公司(食材)" : "玉美生技股份有限公司(供食工場)";
+            }
+
+            return ai.items.map(it => {
+                const rawName = it.name;
+                const normName = normalize(rawName);
+                const normUnit = normalize(it.unit);
+
+                let res = {
+                    '客戶編號': cid,
+                    '客戶名稱': cname,
+                    '訂貨日期': toAD(ai.print_date),
+                    '交貨日期': toAD(ai.delivery_date),
+                    '訂單編號': ai.order_no || "N/A",
+                    '品項代號': 'NULL',
+                    '客戶品項名稱': rawName,
+                    '品項名稱': '未比對成功',
+                    '規格單位代號': 'NULL',
+                    '規格單位': it.unit,
+                    '數量': it.qty
+                };
+
+                // --- 1. 客戶品項名稱強制修正規則 ---
+                // 金針菇(優)
+                if (normName.includes('金針菇') && normName.includes('優') && normName.includes('5k')) {
+                    res['品項代號'] = 'A050A0301';
+                    res['品項名稱'] = '有機金針菇A';
+                    res['規格單位代號'] = '0321';
+                    res['規格單位'] = '3kg/包';
+                    return res;
+                }
+                
+                // 金針菇(良)
+                if (normName.includes('金針菇') && (normName.includes('良') || normName.includes('b')) && normName.includes('5k')) {
+                    res['品項代號'] = 'A0501B301';
+                    res['品項名稱'] = '有機金針菇B+';
+                    res['規格單位代號'] = '0321';
+                    res['規格單位'] = '3kg/包';
+                    return res;
+                }
+
+                // --- 2. Excel 對照表匹配 ---
+                let match = masterMap.find(row => {
+                    const rowA = normalize(row['客戶商品名稱'] || row['A欄']);
+                    const rowD = normalize(row['客戶商品規格單位'] || row['D欄']);
+                    return (normName.includes(rowA) || rowA.includes(normName)) && (normUnit === rowD || normName.includes(rowD));
+                });
+
+                if (!match) {
+                    match = masterMap.find(row => normalize(row['客戶商品名稱'] || row['A欄']).includes(normName));
+                }
+
+                if (match) {
+                    res['品項代號'] = match['ERP品項代號'] || match['B欄'] || 'NULL';
+                    res['品項名稱'] = match['ERP品項名稱'] || match['C欄'] || rawName;
+                    res['規格單位代號'] = match['規代'] || match['E欄'] || 'NULL';
+                    res['規格單位'] = match['單位'] || match['F欄'] || it.unit;
+                }
+
+                return res;
+            });
+        }
+
         function renderTable() {
-            const year = parseInt(document.getElementById('yearInput').value);
-            const month = parseInt(document.getElementById('monthInput').value);
-            const targetOff = parseInt(document.getElementById('targetOffInput').value) || 8;
-            const totalDays = daysInMonth(year, month);
-            const table = document.getElementById('scheduleTable');
-            const dailyWorkCount = new Array(totalDays + 1).fill(0);
-
-            // 表頭生成
-            let html = `<thead><tr class="bg-slate-100 text-slate-500 border-b">
-                <th class="p-4 sticky-col border-r w-32 text-center bg-slate-100 font-bold">人員</th>`;
-            for (let d = 1; d <= totalDays; d++) {
-                const wk = getWeekday(year, month, d);
-                html += `<th class="p-1 min-w-[38px] text-center ${wk === 0 ? 'bg-red-50 text-red-500 font-black' : 'font-medium'}">${d}</th>`;
-            }
-            html += `<th class="p-2 border-l text-center font-bold text-blue-600">休</th><th class="p-2 border-l text-center font-bold text-amber-600">特</th><th class="p-2 border-l bg-slate-200 text-center font-bold">總計</th></tr></thead><tbody>`;
-
-            // 資料列生成
-            staffList.forEach(s => {
-                let totalOff = 0, sp = 0;
-                for (let d = 1; d <= totalDays; d++) {
-                    const type = schedule[s.id]?.[d] || 'work';
-                    const wk = getWeekday(year, month, d);
-                    if (type === 'special') sp++;
-                    else if (type === 'manual-off' || type === 'auto-off' || wk === 0) {
-                        totalOff++; 
-                    }
-                    if (type === 'work' && wk !== 0) dailyWorkCount[d]++;
-                }
-                
-                const isTargetMet = totalOff === targetOff;
-                const rowClass = isTargetMet ? 'target-met-row' : 'warning-row';
-
-                html += `<tr class="${rowClass} border-b hover:brightness-95 cell-transition">
-                    <td class="p-3 border-r sticky-col font-bold text-center bg-inherit">${s.name}</td>`;
-                
-                for (let d = 1; d <= totalDays; d++) {
-                    const wk = getWeekday(year, month, d);
-                    const type = schedule[s.id]?.[d] || 'work';
-                    let display = "正", cls = "text-center h-12 border-r cell-transition cursor-pointer font-black text-sm ";
-                    
-                    if (wk === 0) { display = "休"; cls += "bg-sun-off cursor-not-allowed"; }
-                    else if (type === 'manual-off') { display = "休"; cls += "bg-manual-off"; }
-                    else if (type === 'auto-off') { display = "休"; cls += "bg-auto-off"; }
-                    else if (type === 'special') { display = "特"; cls += "bg-special-off"; }
-                    else { cls += "text-work"; }
-
-                    html += `<td onclick="toggleCell(${s.id}, ${d}, ${wk})" class="${cls}">${display}</td>`;
-                }
-
-                const offColor = (totalOff > targetOff) ? 'text-red-500' : (totalOff < targetOff ? 'text-slate-400' : 'text-blue-700');
-                html += `<td class="p-2 text-center ${offColor} font-black border-l">${totalOff}</td>
-                         <td class="p-2 text-center text-amber-600 font-black border-l">${sp}</td>
-                         <td class="p-2 text-center font-black bg-slate-100 border-l">${totalOff + sp}</td></tr>`;
-            });
-
-            // 底部上班人數統計列
-            html += `<tr class="bg-stats-row border-t-2 border-slate-300">
-                <td class="p-3 border-r sticky-col font-bold text-center bg-inherit">上班人數</td>`;
-            for (let d = 1; d <= totalDays; d++) {
-                const wk = getWeekday(year, month, d);
-                const count = dailyWorkCount[d];
-                // 低於 3 人會以紅色標記
-                const countCls = (wk !== 0 && count < 3) ? 'text-red-600 font-extrabold' : 'text-slate-600';
-                html += `<td class="p-1 text-center font-black text-xs ${countCls}">${wk === 0 ? '-' : count}</td>`;
-            }
-            html += `<td colspan="3" class="bg-slate-200"></td></tr></tbody>`;
-            table.innerHTML = html;
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('tableWrapper').classList.remove('hidden');
+            document.getElementById('resultBody').innerHTML = allResults.map(r => `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="p-3 border-b text-slate-400 font-mono">${r['客戶編號']}</td>
+                    <td class="p-3 border-b text-[10px] leading-tight">${r['客戶名稱']}</td>
+                    <td class="p-3 border-b">${r['訂貨日期']}</td>
+                    <td class="p-3 border-b">${r['交貨日期']}</td>
+                    <td class="p-3 border-b font-mono text-[10px]">${r['訂單編號']}</td>
+                    <td class="p-3 border-b font-bold text-blue-600 font-mono">${r['品項代號']}</td>
+                    <td class="p-3 border-b font-medium text-slate-900">${r['客戶品項名稱']}</td>
+                    <td class="p-3 border-b text-slate-700">${r['品項名稱']}</td>
+                    <td class="p-3 border-b text-orange-600 font-bold font-mono">${r['規格單位代號']}</td>
+                    <td class="p-3 border-b">${r['規格單位']}</td>
+                    <td class="p-3 border-b text-right font-bold text-slate-900">${r['數量']}</td>
+                </tr>
+            `).join('');
         }
 
-        // 匯出 Excel
-        function exportToExcel() {
-            const year = document.getElementById('yearInput').value;
-            const month = document.getElementById('monthInput').value;
-            const totalDays = daysInMonth(year, month);
-            const data = [
-                [`${year}年 ${month}月 員工排班表 (每日至少3人上班)`],
-                ["姓名", ...Array.from({length: totalDays}, (_, i) => i + 1), "總休假", "特休天數", "總計"]
-            ];
+        document.getElementById('exportBtn').onclick = () => {
+            if (allResults.length === 0) return;
 
-            staffList.forEach(s => {
-                const row = [s.name];
-                let totalOff = 0, sp = 0;
-                for (let d = 1; d <= totalDays; d++) {
-                    const wk = getWeekday(year, month, d);
-                    const type = (wk === 0) ? 'auto-off' : (schedule[s.id]?.[d] || 'work');
-                    if (type === 'special') { row.push("特休"); sp++; }
-                    else if (type !== 'work' || wk === 0) { row.push("休"); totalOff++; }
-                    else { row.push("正"); }
-                }
-                row.push(totalOff, sp, totalOff + sp);
-                data.push(row);
-            });
+            // 嚴格定義匯出順序
+            const exportData = allResults.map(r => ({
+                '客戶編號': String(r['客戶編號'] || ''),
+                '客戶名稱': String(r['客戶名稱'] || ''),
+                '訂貨日期': String(r['訂貨日期'] || ''),
+                '交貨日期': String(r['交貨日期'] || ''),
+                '訂單編號': String(r['訂單編號'] || ''),
+                '品項代號': String(r['品項代號'] || ''),
+                '客戶品項名稱': String(r['客戶品項名稱'] || ''),
+                '品項名稱': String(r['品項名稱'] || ''),
+                '規格單位代號': String(r['規格單位代號'] || ''),
+                '規格單位': String(r['規格單位'] || ''),
+                '數量': Number(r['數量']) || 0
+            }));
 
-            const ws = XLSX.utils.aoa_to_sheet(data);
+            const ws = XLSX.utils.json_to_sheet(exportData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "班表");
-            XLSX.writeFile(wb, `${year}年${month}月_排班表.xlsx`);
-        }
-
-        window.onload = () => {
-            renderStaffList();
-            renderTable();
+            XLSX.utils.book_append_sheet(wb, ws, "Order_Export");
+            
+            const now = new Date();
+            const filename = `玉美訂單辨識_${now.getMonth()+1}${now.getDate()}_${now.getHours()}${now.getMinutes()}.xlsx`;
+            
+            // 寫入檔案
+            XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
         };
     </script>
 </body>
