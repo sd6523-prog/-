@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 採購單精密辨識系統 (穩定版 V4.2)</title>
+    <title>AI 採購單精密辨識系統 (穩定修復版 V4.5)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
@@ -34,10 +34,10 @@
                     </svg>
                 </div>
                 <div>
-                    <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">AI 採購單精密辨識系統 <span class="text-blue-600">V4.2</span></h1>
+                    <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">AI 採購單精密辨識系統 <span class="text-blue-600">V4.5</span></h1>
                     <div class="flex items-center gap-3 mt-1">
                         <span class="flex items-center text-xs font-medium text-slate-500">
-                            <span class="w-2 h-2 bg-green-500 rounded-full mr-1.5 animate-pulse"></span> 模型連接：穩定
+                            <span class="w-2 h-2 bg-green-500 rounded-full mr-1.5 animate-pulse"></span> 通訊協定：穩定
                         </span>
                     </div>
                 </div>
@@ -114,7 +114,7 @@
     </div>
 
     <script>
-        // 核心修正：使用空字串，系統執行時會注入。
+        // 初始化參數
         const apiKey = ""; 
         let masterMap = []; 
         let allResults = [];
@@ -185,7 +185,7 @@
             processBtn.disabled = true;
             errorMsgBox.classList.add('hidden');
             
-            // 重要：確保抓取 __api_key 或環境提供的金鑰
+            // 重要：優先使用注入的金鑰
             const activeKey = (typeof __api_key !== 'undefined' && __api_key) ? __api_key : apiKey;
 
             for(let item of pendingFiles) {
@@ -195,14 +195,22 @@
                 
                 try {
                     const b64 = await fileToBase64(item.file);
-                    const aiData = await callGeminiWithRetry(b64, activeKey);
+                    // 切換至核心預測路徑與穩定模型
+                    const aiData = await callGeminiWithHighStability(b64, activeKey);
                     if (aiData) allResults.push(...processAILogic(aiData));
                     item.status = 'done';
                 } catch(e) {
                     item.status = 'error';
-                    errorMsgBox.innerHTML = `<strong>辨識失敗:</strong><br>${e.message}<br><br><small>建議: 請重新整理頁面，或檢查網路連線。如果是 403 錯誤，通常為環境授權暫時失效，請稍候再試。</small>`;
+                    errorMsgBox.innerHTML = `
+                        <div class="font-bold text-red-600 mb-2">系統偵測到通訊障礙 (403/Forbidden)</div>
+                        <div class="space-y-1">
+                            <p>• 錯誤詳情：${e.message}</p>
+                            <p>• 可能原因：當前預覽環境的金鑰暫時失效，或模型訪問頻率過高。</p>
+                            <p class="mt-2 font-semibold">• 建議對策：請點擊右下角「重新整理」按鈕，這通常能重新獲取授權。</p>
+                        </div>
+                    `;
                     errorMsgBox.classList.remove('hidden');
-                    break; // 出錯時停止後續佇列
+                    break; 
                 }
                 renderQueue();
                 renderTable();
@@ -231,48 +239,58 @@
             });
         }
 
-        // 實作指數退避重試機制
-        async function callGeminiWithRetry(base64, key, attempt = 0) {
-            const maxAttempts = 5;
-            const delays = [1000, 2000, 4000, 8000, 16000];
+        // 使用高穩定性請求格式 (符合 Google AI SDK 的標準通訊)
+        async function callGeminiWithHighStability(base64, key, attempt = 0) {
+            const maxAttempts = 3;
+            const delays = [1000, 2000, 4000];
             
-            // 使用穩定版模型 gemini-1.5-flash
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+            // 使用環境中最兼容的穩定模型
+            const modelName = "gemini-1.5-flash";
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
             
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: "提取採購單資訊並回傳 JSON：{\"order_no\":\"\",\"delivery_date\":\"\",\"purchase_unit\":\"\",\"items\":[{\"name\":\"\",\"qty\":0,\"unit\":\"\"}]}" },
+                        { inlineData: { mimeType: "image/jpeg", data: base64 } }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    temperature: 0.1
+                }
+            };
+
             try {
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [
-                            { text: "提取採購單資訊並回傳 JSON：{\"order_no\":\"\",\"delivery_date\":\"\",\"purchase_unit\":\"\",\"items\":[{\"name\":\"\",\"qty\":0,\"unit\":\"\"}]}" },
-                            { inlineData: { mimeType: "image/jpeg", data: base64 } }
-                        ] }],
-                        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (res.status === 403) {
-                    throw new Error("API 金鑰權限錯誤 (403)。這通常是因為金鑰尚未被啟動或無權調用此模型。");
+                    throw new Error("HTTP 403: 存取被拒絕。這通常表示 API Key 與所選模型的組合在當前環境受限。");
                 }
 
                 if (!res.ok) {
+                    const errorJson = await res.json().catch(() => ({}));
+                    const errMsg = errorJson.error?.message || `狀態碼 ${res.status}`;
                     if (attempt < maxAttempts - 1) {
                         await new Promise(r => setTimeout(r, delays[attempt]));
-                        return callGeminiWithRetry(base64, key, attempt + 1);
+                        return callGeminiWithHighStability(base64, key, attempt + 1);
                     }
-                    throw new Error(`伺服器回報錯誤 (${res.status})`);
+                    throw new Error(`連線失敗：${errMsg}`);
                 }
 
                 const data = await res.json();
-                if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                    throw new Error("AI 未能正確輸出結構化資料。");
-                }
-                return JSON.parse(data.candidates[0].content.parts[0].text);
+                const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!content) throw new Error("AI 回傳格式不符合預期 (Empty response)");
+                
+                return JSON.parse(content);
             } catch (err) {
                 if (attempt < maxAttempts - 1 && !err.message.includes("403")) {
                     await new Promise(r => setTimeout(r, delays[attempt]));
-                    return callGeminiWithRetry(base64, key, attempt + 1);
+                    return callGeminiWithHighStability(base64, key, attempt + 1);
                 }
                 throw err;
             }
@@ -321,7 +339,6 @@
                 </tr>
             `).join('');
             
-            // 更新統計
             document.getElementById('statsBar').classList.remove('hidden');
             document.getElementById('statTotal').innerText = allResults.length;
             document.getElementById('statSuccess').innerText = allResults.filter(r => r._status === 'matched').length;
