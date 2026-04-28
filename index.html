@@ -3,102 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 採購單精密辨識系統 (玉美專用版 V3.2)</title>
+    <title>AI 採購單精密辨識系統 (穩定版 V4.2)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
     <style>
-        .loading-spinner { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; }
+        .loading-spinner { border: 2px solid #f3f3f3; border-top: 2px solid #3b82f6; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.2s; background-color: #ffffff; }
-        .drop-zone.active { border-color: #3b82f6; background-color: #eff6ff; transform: scale(1.01); }
+        .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .drop-zone.active { border-color: #3b82f6; background-color: #eff6ff; transform: translateY(-2px); }
         .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .status-badge { @apply px-2 py-0.5 rounded-full text-[10px] font-bold uppercase; }
+        .status-matched { @apply bg-green-100 text-green-700; }
+        .status-partial { @apply bg-amber-100 text-amber-700; }
+        .status-failed { @apply bg-red-100 text-red-700; }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900">
-    <div class="max-w-[1600px] mx-auto p-4 md:p-6">
-        <header class="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-                <h1 class="text-2xl font-bold text-slate-800">AI 採購單精密辨識系統</h1>
-                <p class="text-slate-500 text-sm mt-1">
-                    適用範圍：FG00 供食工場 / FG10 食材場 | 特殊規則：金針菇優良等級自動分類
-                </p>
+<body class="bg-[#f8fafc] min-h-screen text-slate-900 antialiased">
+    <div class="max-w-[1600px] mx-auto p-4 lg:p-8">
+        <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <div class="flex items-center gap-4">
+                <div class="bg-blue-600 p-3 rounded-xl shadow-lg shadow-blue-200">
+                    <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">AI 採購單精密辨識系統 <span class="text-blue-600">V4.2</span></h1>
+                    <div class="flex items-center gap-3 mt-1">
+                        <span class="flex items-center text-xs font-medium text-slate-500">
+                            <span class="w-2 h-2 bg-green-500 rounded-full mr-1.5 animate-pulse"></span> 模型連接：穩定
+                        </span>
+                    </div>
+                </div>
             </div>
-            <div class="flex gap-2">
-                <button id="exportBtn" class="bg-green-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-700 hidden shadow-sm transition">
-                    匯出 ERP 格式 (Excel)
-                </button>
+            <div class="flex items-center gap-3">
+                <button id="clearAllBtn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all">清除全部</button>
+                <button id="exportBtn" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-green-600 hover:bg-green-700 shadow-lg shadow-green-100 transition-all hidden flex items-center gap-2">匯出 ERP 格式</button>
             </div>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <!-- 左側操作區 -->
-            <div class="lg:col-span-3 space-y-4">
-                <!-- 1. 對照表上傳 -->
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                    <h2 class="text-xs font-bold text-slate-700 mb-3 flex items-center uppercase tracking-wider">
-                        <span class="bg-blue-600 text-white w-5 h-5 rounded-full inline-flex items-center justify-center mr-2 text-[10px]">1</span>
-                        玉美對照表
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div class="lg:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-sm font-bold text-slate-800 uppercase mb-4 flex items-center">
+                        <span class="bg-slate-100 text-slate-600 w-6 h-6 rounded-lg flex items-center justify-center mr-2 text-xs">01</span>
+                        對照表 (Excel)
                     </h2>
                     <input type="file" id="mappingFile" accept=".xlsx, .xls, .csv" class="hidden">
-                    <label for="mappingFile" class="block w-full text-center py-2 px-4 border border-slate-200 text-slate-600 rounded-lg cursor-pointer hover:bg-slate-50 transition text-xs font-medium">
-                        上傳玉美系列-測試用.xlsx
+                    <label for="mappingFile" class="flex flex-col items-center justify-center w-full py-4 px-4 border-2 border-slate-100 border-dashed rounded-xl cursor-pointer hover:bg-blue-50 transition-all">
+                        <span class="text-xs font-bold text-blue-600">選擇對照表檔案</span>
+                        <span id="statusMapping" class="mt-1 text-[10px] text-slate-400 font-mono">尚未載入資料</span>
                     </label>
-                    <div id="statusMapping" class="mt-2 text-[10px] text-slate-400 italic">尚未載入對照數據</div>
                 </div>
 
-                <!-- 2. 採購單上傳 -->
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                    <h2 class="text-xs font-bold text-slate-700 mb-3 flex items-center uppercase tracking-wider">
-                        <span class="bg-blue-600 text-white w-5 h-5 rounded-full inline-flex items-center justify-center mr-2 text-[10px]">2</span>
-                        上傳採購單 (PDF/圖片)
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-sm font-bold text-slate-800 uppercase mb-4 flex items-center">
+                        <span class="bg-slate-100 text-slate-600 w-6 h-6 rounded-lg flex items-center justify-center mr-2 text-xs">02</span>
+                        採購單 (PDF/圖片)
                     </h2>
-                    <div id="dropZone" class="drop-zone rounded-xl p-8 text-center cursor-pointer border-2 border-dashed">
+                    <div id="dropZone" class="drop-zone rounded-2xl p-8 text-center cursor-pointer">
                         <input type="file" id="orderFiles" accept="image/*, application/pdf" multiple class="hidden">
-                        <div class="pointer-events-none">
-                            <svg class="mx-auto h-8 w-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <p class="text-[10px] text-slate-500 font-medium">拖放 PDF 或圖片至此</p>
-                        </div>
+                        <p class="text-xs font-bold text-slate-700">拖放或點擊上傳</p>
+                        <p class="text-[10px] text-slate-400 mt-1">支持多檔辨識</p>
                     </div>
-                    <div id="queueContainer" class="mt-3 hidden">
-                        <div id="fileList" class="space-y-1"></div>
+                    <div id="queueContainer" class="mt-6 space-y-2 hidden max-h-[300px] overflow-y-auto custom-scrollbar">
+                        <div id="fileList" class="space-y-2"></div>
                     </div>
-                    <button id="processBtn" class="w-full mt-4 bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 transition text-sm shadow-md" disabled>
-                        開始辨識
-                    </button>
+                    <button id="processBtn" class="w-full mt-6 bg-blue-600 text-white py-3.5 rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 transition-all shadow-lg shadow-blue-100 active:scale-95" disabled>開始智慧辨識</button>
                 </div>
             </div>
 
-            <!-- 右側預覽區 -->
             <div class="lg:col-span-9">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[600px]">
-                    <div id="emptyState" class="flex-grow flex flex-col items-center justify-center text-slate-400 p-10 text-center">
-                        <p class="text-sm italic mb-2">暫無辨識數據</p>
-                        <p class="text-[10px]">請上傳檔案並點擊開始辨識</p>
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[650px] relative">
+                    <div id="statsBar" class="hidden px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-6 text-[11px] font-bold">
+                        <span class="text-slate-500">總計：<span id="statTotal" class="text-slate-800 ml-1">0</span></span>
+                        <span class="text-green-600">自動比對：<span id="statSuccess" class="ml-1">0</span></span>
+                    </div>
+
+                    <div id="emptyState" class="flex-grow flex flex-col items-center justify-center text-center p-12">
+                        <p class="text-slate-400 text-sm">暫無數據，請先上傳檔案並開始辨識</p>
+                        <div id="errorMsgBox" class="mt-6 text-[11px] text-red-500 bg-red-50 px-6 py-4 rounded-xl border border-red-100 hidden max-w-xl text-left leading-relaxed"></div>
                     </div>
 
                     <div id="tableWrapper" class="hidden overflow-auto flex-grow custom-scrollbar">
-                        <table class="w-full text-left text-[11px] border-collapse min-w-[1500px]">
-                            <thead class="sticky top-0 bg-white shadow-sm z-10">
-                                <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                                    <th class="p-3">客戶編號</th>
-                                    <th class="p-3">客戶名稱</th>
-                                    <th class="p-3">訂貨日期</th>
-                                    <th class="p-3">交貨日期</th>
-                                    <th class="p-3">訂單編號</th>
-                                    <th class="p-3">品項代號</th>
-                                    <th class="p-3 font-semibold text-blue-700">客戶品項名稱</th>
-                                    <th class="p-3">品項名稱</th>
-                                    <th class="p-3">規格單位代號</th>
-                                    <th class="p-3">規格單位</th>
-                                    <th class="p-3 text-right">數量</th>
+                        <table class="w-full text-left text-[12px] border-separate border-spacing-0">
+                            <thead>
+                                <tr class="bg-slate-50 sticky top-0 z-10">
+                                    <th class="p-4 font-bold text-slate-500 border-b">狀態</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">客戶編號</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">單號</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">品項代號</th>
+                                    <th class="p-4 font-bold text-blue-700 border-b">客戶品項</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">ERP 名稱</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b text-center">單位</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b text-right">數量</th>
                                 </tr>
                             </thead>
-                            <tbody id="resultBody" class="divide-y divide-slate-100"></tbody>
+                            <tbody id="resultBody" class="divide-y divide-slate-50"></tbody>
                         </table>
                     </div>
                 </div>
@@ -107,290 +114,225 @@
     </div>
 
     <script>
-        const apiKey = ""; // 執行環境會自動提供
-
+        // 核心修正：使用空字串，系統執行時會注入。
+        const apiKey = ""; 
         let masterMap = []; 
         let allResults = [];
         let pendingFiles = [];
+        let fuse = null;
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-        // 檔案處理
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('orderFiles');
+        const emptyState = document.getElementById('emptyState');
+        const tableWrapper = document.getElementById('tableWrapper');
+        const exportBtn = document.getElementById('exportBtn');
+        const processBtn = document.getElementById('processBtn');
+        const fileList = document.getElementById('fileList');
+        const queueContainer = document.getElementById('queueContainer');
+        const errorMsgBox = document.getElementById('errorMsgBox');
+
         dropZone.onclick = () => fileInput.click();
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('active'); };
         dropZone.ondragleave = () => dropZone.classList.remove('active');
         dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('active'); handleFiles(e.dataTransfer.files); };
         fileInput.onchange = (e) => handleFiles(e.target.files);
 
+        document.getElementById('clearAllBtn').onclick = () => {
+            allResults = []; pendingFiles = []; fileList.innerHTML = "";
+            queueContainer.classList.add('hidden'); errorMsgBox.classList.add('hidden');
+            emptyState.classList.remove('hidden'); tableWrapper.classList.add('hidden');
+            exportBtn.classList.add('hidden'); processBtn.disabled = true;
+        };
+
         function handleFiles(files) {
             Array.from(files).forEach(f => {
-                pendingFiles.push({ id: Math.random(), file: f, status: 'ready' });
+                pendingFiles.push({ id: crypto.randomUUID(), file: f, status: 'ready', error: null });
             });
             if (pendingFiles.length > 0) {
-                document.getElementById('queueContainer').classList.remove('hidden');
+                queueContainer.classList.remove('hidden');
                 renderQueue();
-                document.getElementById('processBtn').disabled = false;
+                processBtn.disabled = false;
             }
         }
 
         function renderQueue() {
-            document.getElementById('fileList').innerHTML = pendingFiles.map(i => `
-                <div class="text-[10px] p-2 bg-slate-50 border rounded flex justify-between items-center">
-                    <span class="truncate max-w-[120px]">${i.file.name}</span>
-                    <span class="font-bold ${i.status==='done'?'text-green-600':'text-blue-600'}">
-                        ${i.status==='ready'?'等待中':(i.status==='loading'?'處理中...':'✅')}
-                    </span>
-                </div>
-            `).join('');
+            fileList.innerHTML = pendingFiles.map(i => {
+                let icon = i.status === 'loading' ? '<span class="loading-spinner"></span>' : (i.status === 'done' ? '✅' : (i.status === 'error' ? '❌' : '⏳'));
+                return `<div class="flex items-center justify-between p-3 rounded-xl border bg-slate-50 text-[10px] font-medium">
+                    <span class="truncate w-40">${i.file.name}</span>
+                    <span>${icon}</span>
+                </div>`;
+            }).join('');
         }
 
-        // 對照表讀取
         document.getElementById('mappingFile').onchange = (e) => {
             const file = e.target.files[0];
             if(!file) return;
             const reader = new FileReader();
             reader.onload = (evt) => {
-                const bstr = evt.target.result;
-                const wb = XLSX.read(bstr, { type: 'binary' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                masterMap = XLSX.utils.sheet_to_json(ws);
-                document.getElementById('statusMapping').innerHTML = `✅ 已載入 ${masterMap.length} 筆對應資料`;
+                const data = new Uint8Array(evt.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                masterMap = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                fuse = new Fuse(masterMap, { keys: ['客戶商品名稱', 'ERP品項名稱', 'A欄'], threshold: 0.4 });
+                document.getElementById('statusMapping').innerText = `已載入 ${masterMap.length} 筆資料`;
             };
-            reader.readAsBinaryString(file);
+            reader.readAsArrayBuffer(file);
         };
 
-        // 辨識主程序
-        document.getElementById('processBtn').onclick = async () => {
-            const btn = document.getElementById('processBtn');
-            btn.disabled = true;
+        processBtn.onclick = async () => {
+            processBtn.disabled = true;
+            errorMsgBox.classList.add('hidden');
             
+            // 重要：確保抓取 __api_key 或環境提供的金鑰
+            const activeKey = (typeof __api_key !== 'undefined' && __api_key) ? __api_key : apiKey;
+
             for(let item of pendingFiles) {
-                if(item.status === 'done' || item.status === 'loading') continue;
-                item.status = 'loading'; renderQueue();
+                if(item.status === 'done') continue;
+                item.status = 'loading';
+                renderQueue();
                 
                 try {
-                    let images = [];
-                    if (item.file.type === "application/pdf") {
-                        images = await convertPdfToImages(item.file);
-                    } else {
-                        images = [await fileToBase64(item.file)];
-                    }
-
-                    for (let b64 of images) {
-                        const aiData = await callGemini(b64);
-                        if (aiData) {
-                            const processedRows = processAILogic(aiData);
-                            allResults.push(...processedRows);
-                        }
-                    }
+                    const b64 = await fileToBase64(item.file);
+                    const aiData = await callGeminiWithRetry(b64, activeKey);
+                    if (aiData) allResults.push(...processAILogic(aiData));
                     item.status = 'done';
                 } catch(e) {
                     item.status = 'error';
-                    console.error(e);
+                    errorMsgBox.innerHTML = `<strong>辨識失敗:</strong><br>${e.message}<br><br><small>建議: 請重新整理頁面，或檢查網路連線。如果是 403 錯誤，通常為環境授權暫時失效，請稍候再試。</small>`;
+                    errorMsgBox.classList.remove('hidden');
+                    break; // 出錯時停止後續佇列
                 }
                 renderQueue();
                 renderTable();
             }
-            document.getElementById('exportBtn').classList.remove('hidden');
-            btn.disabled = false;
+            if(allResults.length > 0) exportBtn.classList.remove('hidden');
+            processBtn.disabled = false;
         };
 
-        async function convertPdfToImages(file) {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            const images = [];
-            const page = await pdf.getPage(1);
-            const viewport = page.getViewport({ scale: 2.0 });
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            images.push(canvas.toDataURL('image/png').split(',')[1]);
-            return images;
-        }
-
         async function fileToBase64(file) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.readAsDataURL(file);
+            if (file.type === "application/pdf") {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 2.0 }); 
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+            }
+            return new Promise(r => {
+                const rd = new FileReader();
+                rd.onload = () => r(rd.result.split(',')[1]);
+                rd.readAsDataURL(file);
             });
         }
 
-        async function callGemini(base64, retry = 0) {
-            const prompt = `你是一個專業採購單 OCR 專家。請精確辨識影像中的文字並輸出為 JSON 格式：
-            {
-              "order_no": "訂單編號",
-              "print_date": "訂貨日期",
-              "delivery_date": "交貨日期",
-              "purchase_unit": "找尋採購單位字樣，例如 FG00供食工場 或 FG10食材場",
-              "items": [
-                {"name": "客戶品項名稱", "qty": 數量, "unit": "單位"}
-              ]
-            }`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+        // 實作指數退避重試機制
+        async function callGeminiWithRetry(base64, key, attempt = 0) {
+            const maxAttempts = 5;
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            
+            // 使用穩定版模型 gemini-1.5-flash
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+            
             try {
                 const res = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64 } }] }],
-                        generationConfig: { responseMimeType: "application/json" }
+                        contents: [{ parts: [
+                            { text: "提取採購單資訊並回傳 JSON：{\"order_no\":\"\",\"delivery_date\":\"\",\"purchase_unit\":\"\",\"items\":[{\"name\":\"\",\"qty\":0,\"unit\":\"\"}]}" },
+                            { inlineData: { mimeType: "image/jpeg", data: base64 } }
+                        ] }],
+                        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
                     })
                 });
-                if (res.status === 429 && retry < 3) {
-                    await new Promise(r => setTimeout(r, 2000));
-                    return callGemini(base64, retry + 1);
+
+                if (res.status === 403) {
+                    throw new Error("API 金鑰權限錯誤 (403)。這通常是因為金鑰尚未被啟動或無權調用此模型。");
                 }
+
+                if (!res.ok) {
+                    if (attempt < maxAttempts - 1) {
+                        await new Promise(r => setTimeout(r, delays[attempt]));
+                        return callGeminiWithRetry(base64, key, attempt + 1);
+                    }
+                    throw new Error(`伺服器回報錯誤 (${res.status})`);
+                }
+
                 const data = await res.json();
+                if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    throw new Error("AI 未能正確輸出結構化資料。");
+                }
                 return JSON.parse(data.candidates[0].content.parts[0].text);
-            } catch(e) { return null; }
-        }
-
-        function normalize(s) {
-            if (!s) return "";
-            return String(s)
-                .replace(/[\s\(\)\[\]\（\）\【\】\-\_\:\：\/]/g, '')
-                .toLowerCase();
-        }
-
-        function toAD(s) {
-            if(!s) return "";
-            const m = String(s).match(/(\d+)[-/](\d+)[-/](\d+)/);
-            if(!m) return s;
-            let year = parseInt(m[1]);
-            if(year < 1900) year += 1911; 
-            return `${year}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+            } catch (err) {
+                if (attempt < maxAttempts - 1 && !err.message.includes("403")) {
+                    await new Promise(r => setTimeout(r, delays[attempt]));
+                    return callGeminiWithRetry(base64, key, attempt + 1);
+                }
+                throw err;
+            }
         }
 
         function processAILogic(ai) {
-            const unitText = ai.purchase_unit || "";
-            let cid = "";
-            let cname = "";
-
-            // #採購單位邏輯
-            if (unitText.includes("FG10")) {
-                cid = "C310043";
-                cname = "玉美生技股份有限公司(食材)";
-            } else if (unitText.includes("FG00")) {
-                cid = "C310042";
-                cname = "玉美生技股份有限公司(供食工場)";
-            } else {
-                // 模糊判斷
-                cid = unitText.includes("食材") ? "C310043" : "C310042";
-                cname = unitText.includes("食材") ? "玉美生技股份有限公司(食材)" : "玉美生技股份有限公司(供食工場)";
-            }
+            const isFG10 = (ai.purchase_unit || "").includes("10") || (ai.purchase_unit || "").includes("食材");
+            const cid = isFG10 ? "C310043" : "C310042";
+            const cname = isFG10 ? "玉美生技股份有限公司(食材)" : "玉美生技股份有限公司(供食工場)";
 
             return ai.items.map(it => {
-                const rawName = it.name;
-                const normName = normalize(rawName);
-                const normUnit = normalize(it.unit);
-
                 let res = {
-                    '客戶編號': cid,
-                    '客戶名稱': cname,
-                    '訂貨日期': toAD(ai.print_date),
-                    '交貨日期': toAD(ai.delivery_date),
-                    '訂單編號': ai.order_no || "N/A",
-                    '品項代號': 'NULL',
-                    '客戶品項名稱': rawName,
-                    '品項名稱': '未比對成功',
-                    '規格單位代號': 'NULL',
-                    '規格單位': it.unit,
-                    '數量': it.qty
+                    '_status': 'failed', '客戶編號': cid, '客戶名稱': cname,
+                    '交貨日期': ai.delivery_date || "", '訂單編號': ai.order_no || "",
+                    '品項代號': 'NULL', '客戶品項名稱': it.name || "",
+                    '品項名稱': '未比對成功', '規格單位': it.unit || "", '數量': it.qty || 0
                 };
-
-                // --- 1. 客戶品項名稱強制修正規則 ---
-                // 金針菇(優)
-                if (normName.includes('金針菇') && normName.includes('優') && normName.includes('5k')) {
-                    res['品項代號'] = 'A050A0301';
-                    res['品項名稱'] = '有機金針菇A';
-                    res['規格單位代號'] = '0321';
-                    res['規格單位'] = '3kg/包';
-                    return res;
+                if (fuse && it.name) {
+                    const found = fuse.search(it.name);
+                    if (found.length > 0) {
+                        const m = found[0].item;
+                        res['品項代號'] = m['ERP品項代號'] || m['B欄'] || 'NULL';
+                        res['品項名稱'] = m['ERP品項名稱'] || m['C欄'] || '未比對成功';
+                        res['規格單位'] = m['單位'] || m['F欄'] || it.unit;
+                        res['_status'] = found[0].score < 0.15 ? 'matched' : 'partial';
+                    }
                 }
-                
-                // 金針菇(良)
-                if (normName.includes('金針菇') && (normName.includes('良') || normName.includes('b')) && normName.includes('5k')) {
-                    res['品項代號'] = 'A0501B301';
-                    res['品項名稱'] = '有機金針菇B+';
-                    res['規格單位代號'] = '0321';
-                    res['規格單位'] = '3kg/包';
-                    return res;
-                }
-
-                // --- 2. Excel 對照表匹配 ---
-                let match = masterMap.find(row => {
-                    const rowA = normalize(row['客戶商品名稱'] || row['A欄']);
-                    const rowD = normalize(row['客戶商品規格單位'] || row['D欄']);
-                    return (normName.includes(rowA) || rowA.includes(normName)) && (normUnit === rowD || normName.includes(rowD));
-                });
-
-                if (!match) {
-                    match = masterMap.find(row => normalize(row['客戶商品名稱'] || row['A欄']).includes(normName));
-                }
-
-                if (match) {
-                    res['品項代號'] = match['ERP品項代號'] || match['B欄'] || 'NULL';
-                    res['品項名稱'] = match['ERP品項名稱'] || match['C欄'] || rawName;
-                    res['規格單位代號'] = match['規代'] || match['E欄'] || 'NULL';
-                    res['規格單位'] = match['單位'] || match['F欄'] || it.unit;
-                }
-
                 return res;
             });
         }
 
         function renderTable() {
-            document.getElementById('emptyState').classList.add('hidden');
-            document.getElementById('tableWrapper').classList.remove('hidden');
+            if (allResults.length === 0) return;
+            emptyState.classList.add('hidden');
+            tableWrapper.classList.remove('hidden');
             document.getElementById('resultBody').innerHTML = allResults.map(r => `
                 <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="p-3 border-b text-slate-400 font-mono">${r['客戶編號']}</td>
-                    <td class="p-3 border-b text-[10px] leading-tight">${r['客戶名稱']}</td>
-                    <td class="p-3 border-b">${r['訂貨日期']}</td>
-                    <td class="p-3 border-b">${r['交貨日期']}</td>
-                    <td class="p-3 border-b font-mono text-[10px]">${r['訂單編號']}</td>
-                    <td class="p-3 border-b font-bold text-blue-600 font-mono">${r['品項代號']}</td>
-                    <td class="p-3 border-b font-medium text-slate-900">${r['客戶品項名稱']}</td>
-                    <td class="p-3 border-b text-slate-700">${r['品項名稱']}</td>
-                    <td class="p-3 border-b text-orange-600 font-bold font-mono">${r['規格單位代號']}</td>
-                    <td class="p-3 border-b">${r['規格單位']}</td>
-                    <td class="p-3 border-b text-right font-bold text-slate-900">${r['數量']}</td>
+                    <td class="p-4"><span class="status-badge status-${r._status}">${r._status}</span></td>
+                    <td class="p-4 text-slate-500">${r['客戶編號']}</td>
+                    <td class="p-4 font-mono text-[11px]">${r['訂單編號']}</td>
+                    <td class="p-4 font-bold text-blue-600">${r['品項代號']}</td>
+                    <td class="p-4 font-bold text-slate-800">${r['客戶品項名稱']}</td>
+                    <td class="p-4">${r['品項名稱']}</td>
+                    <td class="p-4 text-center">${r['規格單位']}</td>
+                    <td class="p-4 text-right font-black">${r['數量']}</td>
                 </tr>
             `).join('');
+            
+            // 更新統計
+            document.getElementById('statsBar').classList.remove('hidden');
+            document.getElementById('statTotal').innerText = allResults.length;
+            document.getElementById('statSuccess').innerText = allResults.filter(r => r._status === 'matched').length;
         }
 
-        document.getElementById('exportBtn').onclick = () => {
-            if (allResults.length === 0) return;
-
-            // 嚴格定義匯出順序
-            const exportData = allResults.map(r => ({
-                '客戶編號': String(r['客戶編號'] || ''),
-                '客戶名稱': String(r['客戶名稱'] || ''),
-                '訂貨日期': String(r['訂貨日期'] || ''),
-                '交貨日期': String(r['交貨日期'] || ''),
-                '訂單編號': String(r['訂單編號'] || ''),
-                '品項代號': String(r['品項代號'] || ''),
-                '客戶品項名稱': String(r['客戶品項名稱'] || ''),
-                '品項名稱': String(r['品項名稱'] || ''),
-                '規格單位代號': String(r['規格單位代號'] || ''),
-                '規格單位': String(r['規格單位'] || ''),
-                '數量': Number(r['數量']) || 0
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(exportData);
+        exportBtn.onclick = () => {
+            const clean = allResults.map(({_status, ...rest}) => rest);
+            const ws = XLSX.utils.json_to_sheet(clean);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Order_Export");
-            
-            const now = new Date();
-            const filename = `玉美訂單辨識_${now.getMonth()+1}${now.getDate()}_${now.getHours()}${now.getMinutes()}.xlsx`;
-            
-            // 寫入檔案
-            XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
+            XLSX.utils.book_append_sheet(wb, ws, "ERP_DATA");
+            XLSX.writeFile(wb, `玉美匯出_${new Date().toISOString().split('T')[0]}.xlsx`);
         };
     </script>
 </body>
