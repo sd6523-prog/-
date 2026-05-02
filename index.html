@@ -43,6 +43,10 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
+                <button id="testApiBtn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-2">
+                    <span id="testApiIcon">🔑</span>
+                    <span id="testApiLabel">API 測試</span>
+                </button>
                 <button id="clearAllBtn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all">清除全部</button>
                 <button id="exportBtn" class="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-green-600 hover:bg-green-700 shadow-lg shadow-green-100 transition-all hidden flex items-center gap-2">匯出 ERP 格式</button>
             </div>
@@ -95,13 +99,16 @@
                         <table class="w-full text-left text-[12px] border-separate border-spacing-0">
                             <thead>
                                 <tr class="bg-slate-50 sticky top-0 z-10">
-                                    <th class="p-4 font-bold text-slate-500 border-b">狀態</th>
                                     <th class="p-4 font-bold text-slate-500 border-b">客戶編號</th>
-                                    <th class="p-4 font-bold text-slate-500 border-b">單號</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">客戶名稱</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">訂貨日期</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">交貨日期</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">訂單編號</th>
                                     <th class="p-4 font-bold text-slate-500 border-b">品項代號</th>
-                                    <th class="p-4 font-bold text-blue-700 border-b">客戶品項</th>
-                                    <th class="p-4 font-bold text-slate-500 border-b">ERP 名稱</th>
-                                    <th class="p-4 font-bold text-slate-500 border-b text-center">單位</th>
+                                    <th class="p-4 font-bold text-blue-700 border-b">客戶品項名稱</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">品項名稱</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">規格單位代號</th>
+                                    <th class="p-4 font-bold text-slate-500 border-b">規格單位</th>
                                     <th class="p-4 font-bold text-slate-500 border-b text-right">數量</th>
                                 </tr>
                             </thead>
@@ -115,7 +122,7 @@
 
     <script>
         // 初始化參數
-        const apiKey = ""; 
+        const apiKey = "AIzaSyClNoGDiOD6-GIhQahhQQZrb-IeqIKZAjQ"; 
         let masterMap = []; 
         let allResults = [];
         let pendingFiles = [];
@@ -185,8 +192,22 @@
             processBtn.disabled = true;
             errorMsgBox.classList.add('hidden');
             
-            // 重要：優先使用注入的金鑰
+            // 優先使用注入的金鑰，否則使用頁面內的 apiKey
             const activeKey = (typeof __api_key !== 'undefined' && __api_key) ? __api_key : apiKey;
+
+            // API Key 空白時提前攔截
+            if (!activeKey || activeKey.trim() === '') {
+                errorMsgBox.innerHTML = `
+                    <div class="font-bold text-red-600 mb-2">未設定 API Key</div>
+                    <div class="space-y-1">
+                        <p>• 請在程式碼第 118 行的 <code>const apiKey = ""</code> 中填入您的 Gemini API Key。</p>
+                        <p>• 可至 <a href="https://aistudio.google.com/apikey" target="_blank" class="underline text-blue-600">Google AI Studio</a> 免費取得金鑰。</p>
+                    </div>
+                `;
+                errorMsgBox.classList.remove('hidden');
+                processBtn.disabled = false;
+                return;
+            }
 
             for(let item of pendingFiles) {
                 if(item.status === 'done') continue;
@@ -244,14 +265,14 @@
             const maxAttempts = 3;
             const delays = [1000, 2000, 4000];
             
-            // 使用環境中最兼容的穩定模型
-            const modelName = "gemini-1.5-flash";
+            // 使用當前穩定模型 (gemini-2.5-flash，2026/6 前有效)
+            const modelName = "gemini-2.5-flash";
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
             
             const payload = {
                 contents: [{
                     parts: [
-                        { text: "提取採購單資訊並回傳 JSON：{\"order_no\":\"\",\"delivery_date\":\"\",\"purchase_unit\":\"\",\"items\":[{\"name\":\"\",\"qty\":0,\"unit\":\"\"}]}" },
+                        { text: "提取採購單資料並回傳 JSON：{\"order_no\":\"\",\"order_date\":\"\",\"delivery_date\":\"\",\"purchase_unit\":\"\",\"items\":[{\"name\":\"\",\"qty\":0,\"unit\":\"\"}]}\n訂貨日期為檔案左上角列印日期；到貨日期為檔案右上角的到貨日期。請直接回傳純 JSON，不要附加說明文字。" },
                         { inlineData: { mimeType: "image/jpeg", data: base64 } }
                     ]
                 }],
@@ -296,17 +317,33 @@
             }
         }
 
+        function toAD(s) {
+            if (!s) return "";
+            const text = String(s).trim();
+            const m = text.match(/(\d{2,4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+            if (!m) return text;
+            let year = parseInt(m[1], 10);
+            const month = String(m[2]).padStart(2, '0');
+            const day = String(m[3]).padStart(2, '0');
+            if (year < 1900) year += 1911;
+            return `${year}/${month}/${day}`;
+        }
+
         function processAILogic(ai) {
             const isFG10 = (ai.purchase_unit || "").includes("10") || (ai.purchase_unit || "").includes("食材");
             const cid = isFG10 ? "C310043" : "C310042";
             const cname = isFG10 ? "玉美生技股份有限公司(食材)" : "玉美生技股份有限公司(供食工場)";
+            const orderDate = toAD(ai.order_date || ai.print_date || ai.purchase_date || ai.printed_date || "");
+            const deliveryDate = toAD(ai.delivery_date || ai.deliver_date || ai.ship_date || "");
 
             return ai.items.map(it => {
                 let res = {
                     '_status': 'failed', '客戶編號': cid, '客戶名稱': cname,
-                    '交貨日期': ai.delivery_date || "", '訂單編號': ai.order_no || "",
+                    '訂貨日期': orderDate,
+                    '交貨日期': deliveryDate,
+                    '訂單編號': ai.order_no || "",
                     '品項代號': 'NULL', '客戶品項名稱': it.name || "",
-                    '品項名稱': '未比對成功', '規格單位': it.unit || "", '數量': it.qty || 0
+                    '品項名稱': '未比對成功', '規格單位代號': '', '規格單位': it.unit || "", '數量': it.qty || 0
                 };
                 if (fuse && it.name) {
                     const found = fuse.search(it.name);
@@ -314,6 +351,7 @@
                         const m = found[0].item;
                         res['品項代號'] = m['ERP品項代號'] || m['B欄'] || 'NULL';
                         res['品項名稱'] = m['ERP品項名稱'] || m['C欄'] || '未比對成功';
+                        res['規格單位代號'] = m['規代'] || m['E欄'] || '';
                         res['規格單位'] = m['單位'] || m['F欄'] || it.unit;
                         res['_status'] = found[0].score < 0.15 ? 'matched' : 'partial';
                     }
@@ -328,13 +366,16 @@
             tableWrapper.classList.remove('hidden');
             document.getElementById('resultBody').innerHTML = allResults.map(r => `
                 <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="p-4"><span class="status-badge status-${r._status}">${r._status}</span></td>
                     <td class="p-4 text-slate-500">${r['客戶編號']}</td>
+                    <td class="p-4">${r['客戶名稱']}</td>
+                    <td class="p-4">${r['訂貨日期']}</td>
+                    <td class="p-4">${r['交貨日期']}</td>
                     <td class="p-4 font-mono text-[11px]">${r['訂單編號']}</td>
                     <td class="p-4 font-bold text-blue-600">${r['品項代號']}</td>
                     <td class="p-4 font-bold text-slate-800">${r['客戶品項名稱']}</td>
                     <td class="p-4">${r['品項名稱']}</td>
-                    <td class="p-4 text-center">${r['規格單位']}</td>
+                    <td class="p-4">${r['規格單位代號'] || ''}</td>
+                    <td class="p-4">${r['規格單位']}</td>
                     <td class="p-4 text-right font-black">${r['數量']}</td>
                 </tr>
             `).join('');
@@ -345,12 +386,78 @@
         }
 
         exportBtn.onclick = () => {
-            const clean = allResults.map(({_status, ...rest}) => rest);
+            const clean = allResults.map(({_status, ...rest}) => ({
+                '客戶編號': rest['客戶編號'] || '',
+                '客戶名稱': rest['客戶名稱'] || '',
+                '訂貨日期': rest['訂貨日期'] || '',
+                '交貨日期': rest['交貨日期'] || '',
+                '訂單編號': rest['訂單編號'] || '',
+                '品項代號': rest['品項代號'] || '',
+                '客戶品項名稱': rest['客戶品項名稱'] || '',
+                '品項名稱': rest['品項名稱'] || '',
+                '規格單位代號': rest['規格單位代號'] || '',
+                '規格單位': rest['規格單位'] || '',
+                '數量': Number(rest['數量']) || 0
+            }));
             const ws = XLSX.utils.json_to_sheet(clean);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "ERP_DATA");
             XLSX.writeFile(wb, `玉美匯出_${new Date().toISOString().split('T')[0]}.xlsx`);
         };
+
+        document.getElementById('testApiBtn').onclick = async () => {
+            const btn = document.getElementById('testApiBtn');
+            const icon = document.getElementById('testApiIcon');
+            const label = document.getElementById('testApiLabel');
+            const activeKey = (typeof __api_key !== 'undefined' && __api_key) ? __api_key : apiKey;
+
+            if (!activeKey || activeKey.trim() === '') {
+                icon.textContent = '❌';
+                label.textContent = 'Key 未設定';
+                btn.className = 'px-5 py-2.5 rounded-xl text-sm font-semibold text-red-600 bg-red-50 border border-red-200 transition-all flex items-center gap-2';
+                setTimeout(() => resetTestBtn(), 3000);
+                return;
+            }
+
+            btn.disabled = true;
+            icon.innerHTML = '<span class="loading-spinner"></span>';
+            label.textContent = '測試中…';
+            btn.className = 'px-5 py-2.5 rounded-xl text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 transition-all flex items-center gap-2';
+
+            try {
+                const modelName = "gemini-2.5-flash";
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${activeKey}`;
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply "OK" only.' }] }] })
+                });
+                if (res.ok) {
+                    icon.textContent = '✅';
+                    label.textContent = '連線成功';
+                    btn.className = 'px-5 py-2.5 rounded-xl text-sm font-semibold text-green-700 bg-green-50 border border-green-300 transition-all flex items-center gap-2';
+                } else {
+                    const errJson = await res.json().catch(() => ({}));
+                    const msg = errJson.error?.message || `狀態 ${res.status}`;
+                    icon.textContent = '❌';
+                    label.textContent = `失敗：${msg.slice(0, 30)}`;
+                    btn.className = 'px-5 py-2.5 rounded-xl text-sm font-semibold text-red-600 bg-red-50 border border-red-200 transition-all flex items-center gap-2';
+                }
+            } catch (e) {
+                icon.textContent = '❌';
+                label.textContent = '網路錯誤';
+                btn.className = 'px-5 py-2.5 rounded-xl text-sm font-semibold text-red-600 bg-red-50 border border-red-200 transition-all flex items-center gap-2';
+            }
+
+            btn.disabled = false;
+            setTimeout(() => resetTestBtn(), 4000);
+        };
+
+        function resetTestBtn() {
+            document.getElementById('testApiIcon').textContent = '🔑';
+            document.getElementById('testApiLabel').textContent = 'API 測試';
+            document.getElementById('testApiBtn').className = 'px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-2';
+        }
     </script>
 </body>
 </html>
